@@ -517,6 +517,10 @@ void ggml_backend_reg_set_log_callback(ggml_backend_reg_t reg, ggml_log_callback
 #include "ggml-cuda.h"
 #endif
 
+#ifdef GGML_USE_METAL
+#include "ggml-metal.h"
+#endif
+
 struct ggml_backend_registry {
     std::vector<ggml_backend_reg_t> backends;
     std::vector<ggml_backend_dev_t> devices;
@@ -525,10 +529,13 @@ struct ggml_backend_registry {
 #ifdef GGML_USE_CUDA
         register_backend(ggml_backend_cuda_reg());
 #endif
+#ifdef GGML_USE_METAL
+        register_backend(ggml_backend_metal_reg());
+#endif
 
         register_backend(ggml_backend_cpu_reg());
 
-        // TODO: sycl, metal, vulkan, kompute, cann
+        // TODO: sycl, vulkan, kompute, cann
     }
 
     void register_backend(ggml_backend_reg_t reg) {
@@ -1170,7 +1177,7 @@ static ggml_backend_dev_t ggml_backend_cpu_reg_device_get(ggml_backend_reg_t reg
     GGML_UNUSED(index);
 }
 
-struct ggml_backend_reg_i ggml_backend_cpu_reg_i = {
+static const struct ggml_backend_reg_i ggml_backend_cpu_reg_i = {
     /* .get_name         = */ ggml_backend_cpu_reg_name,
     /* .device_count     = */ ggml_backend_cpu_reg_device_count,
     /* .device_get       = */ ggml_backend_cpu_reg_device_get,
