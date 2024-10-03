@@ -517,6 +517,10 @@ void ggml_backend_reg_set_log_callback(ggml_backend_reg_t reg, ggml_log_callback
 #include "ggml-cuda.h"
 #endif
 
+#ifdef GGML_USE_VULKAN
+#include "ggml-vulkan.h"
+#endif
+
 struct ggml_backend_registry {
     std::vector<ggml_backend_reg_t> backends;
     std::vector<ggml_backend_dev_t> devices;
@@ -524,6 +528,10 @@ struct ggml_backend_registry {
     ggml_backend_registry() {
 #ifdef GGML_USE_CUDA
         register_backend(ggml_backend_cuda_reg());
+#endif
+
+#ifdef GGML_USE_VULKAN
+        register_backend(ggml_backend_vk_reg());
 #endif
 
         register_backend(ggml_backend_cpu_reg());

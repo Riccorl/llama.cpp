@@ -6779,6 +6779,155 @@ void ggml_backend_vk_get_device_memory(int device, size_t * free, size_t * total
     }
 }
 
+//////////////////////////
+
+struct ggml_backend_vk_device_context {
+    int device;
+    std::string name;
+    std::string description;
+};
+
+static const char * ggml_backend_vk_device_get_name(ggml_backend_dev_t dev) {
+    ggml_backend_vk_device_context * ctx = (ggml_backend_vk_device_context *)dev->context;
+    return ctx->name.c_str();
+}
+
+static const char * ggml_backend_vk_device_get_description(ggml_backend_dev_t dev) {
+    ggml_backend_vk_device_context * ctx = (ggml_backend_vk_device_context *)dev->context;
+    return ctx->description.c_str();
+}
+
+static void ggml_backend_vk_device_get_memory(ggml_backend_dev_t device, size_t * free, size_t * total) {
+    ggml_backend_vk_device_context * ctx = (ggml_backend_vk_device_context *)device->context;
+    ggml_backend_vk_get_device_memory(ctx->device, free, total);
+}
+
+static ggml_backend_buffer_type_t ggml_backend_vk_device_get_buffer_type(ggml_backend_dev_t dev) {
+    ggml_backend_vk_device_context * ctx = (ggml_backend_vk_device_context *)dev->context;
+    return ggml_backend_vk_buffer_type(ctx->device);
+}
+
+static ggml_backend_buffer_type_t ggml_backend_vk_device_get_host_buffer_type(ggml_backend_dev_t dev) {
+    UNUSED(dev);
+    return ggml_backend_vk_host_buffer_type();
+}
+
+static enum ggml_backend_dev_type ggml_backend_vk_device_get_type(ggml_backend_dev_t dev) {
+    UNUSED(dev);
+    return GGML_BACKEND_DEVICE_TYPE_GPU_FULL;
+}
+
+static void ggml_backend_vk_device_get_props(ggml_backend_dev_t dev, struct ggml_backend_dev_props * props) {
+    props->name        = ggml_backend_vk_device_get_name(dev);
+    props->description = ggml_backend_vk_device_get_description(dev);
+    props->type        = ggml_backend_vk_device_get_type(dev);
+    ggml_backend_vk_device_get_memory(dev, &props->memory_free, &props->memory_total);
+    props->caps = {
+        /* async       */ false,
+        /* host_buffer */ true,
+        /* events      */ false,
+    };
+}
+
+static ggml_backend_t ggml_backend_vk_device_init(ggml_backend_dev_t dev, const char * params) {
+    UNUSED(params);
+    ggml_backend_vk_device_context * ctx = (ggml_backend_vk_device_context *)dev->context;
+    return ggml_backend_vk_init(ctx->device);
+}
+
+static bool ggml_backend_vk_device_supports_op(ggml_backend_dev_t dev, const ggml_tensor * op) {
+    // TODO: move here
+    UNUSED(dev);
+    return ggml_backend_vk_supports_op(nullptr, op);
+}
+
+static bool ggml_backend_vk_device_supports_buft(ggml_backend_dev_t dev, ggml_backend_buffer_type_t buft) {
+    // TODO: move here
+    UNUSED(dev);
+    return ggml_backend_vk_supports_buft(nullptr, buft);
+}
+
+static bool ggml_backend_vk_device_offload_op(ggml_backend_dev_t dev, const ggml_tensor * op) {
+    // TODO: move here
+    UNUSED(dev);
+    return ggml_backend_vk_offload_op(nullptr, op);
+}
+
+static const struct ggml_backend_device_i ggml_backend_vk_device_i = {
+    /* .get_name             = */ ggml_backend_vk_device_get_name,
+    /* .get_description      = */ ggml_backend_vk_device_get_description,
+    /* .get_memory           = */ ggml_backend_vk_device_get_memory,
+    /* .get_type             = */ ggml_backend_vk_device_get_type,
+    /* .get_props            = */ ggml_backend_vk_device_get_props,
+    /* .init_backend         = */ ggml_backend_vk_device_init,
+    /* .get_buffer_type      = */ ggml_backend_vk_device_get_buffer_type,
+    /* .get_host_buffer_type = */ ggml_backend_vk_device_get_host_buffer_type,
+    /* .buffer_from_host_ptr = */ NULL,
+    /* .supports_op          = */ ggml_backend_vk_device_supports_op,
+    /* .supports_buft        = */ ggml_backend_vk_device_supports_buft,
+    /* .offload_op           = */ ggml_backend_vk_device_offload_op,
+    /* .event_new            = */ NULL,
+    /* .event_free           = */ NULL,
+    /* .event_synchronize    = */ NULL,
+};
+
+static const char * ggml_backend_vk_reg_get_name(ggml_backend_reg_t reg) {
+    UNUSED(reg);
+    return GGML_VK_NAME;
+}
+
+static size_t ggml_backend_vk_reg_get_device_count(ggml_backend_reg_t reg) {
+    UNUSED(reg);
+    return ggml_backend_vk_get_device_count();
+}
+
+static ggml_backend_dev_t ggml_backend_vk_reg_get_device(ggml_backend_reg_t reg, size_t device) {
+    static std::vector<ggml_backend_dev_t> devices;
+
+    static bool initialized = false;
+
+    {
+        static std::mutex mutex;
+        std::lock_guard<std::mutex> lock(mutex);
+        if (!initialized) {
+            for (size_t i = 0; i < ggml_backend_vk_get_device_count(); i++) {
+                ggml_backend_vk_device_context * ctx = new ggml_backend_vk_device_context;
+                ctx->device = i;
+                char desc[256];
+                ggml_backend_vk_get_device_description(i, desc, sizeof(desc));
+                ctx->name = GGML_VK_NAME + std::to_string(i);
+                ctx->description = desc;
+                devices.push_back(new ggml_backend_device {
+                    /* .iface   = */ ggml_backend_vk_device_i,
+                    /* .reg     = */ reg,
+                    /* .context = */ ctx,
+                });
+            }
+            initialized = true;
+        }
+    }
+
+    GGML_ASSERT(device < devices.size());
+    return devices[device];
+}
+
+static const struct ggml_backend_reg_i ggml_backend_vk_reg_i = {
+    /* .get_name         = */ ggml_backend_vk_reg_get_name,
+    /* .get_device_count = */ ggml_backend_vk_reg_get_device_count,
+    /* .get_device       = */ ggml_backend_vk_reg_get_device,
+    /* .get_proc_address = */ NULL,
+    /* .set_log_callback = */ NULL,
+};
+
+ggml_backend_reg_t ggml_backend_vk_reg() {
+    static ggml_backend_reg reg = {
+        /* .iface   = */ ggml_backend_vk_reg_i,
+        /* .context = */ nullptr,
+    };
+
+    return &reg;
+}
+
 // Extension availability
 static bool ggml_vk_instance_validation_ext_available(const std::vector<vk::ExtensionProperties>& instance_extensions) {
 #ifdef GGML_VULKAN_VALIDATE
